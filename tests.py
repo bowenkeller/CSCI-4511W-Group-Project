@@ -42,8 +42,8 @@ def run_comparison(csv_file: str, start: str, goal: str, show_visit_order: bool 
     if goal not in graph.node_set:
         raise ValueError(f"Goal node not found: {goal}")
 
-    bfs_player = Player()
-    greedy_player = Player()
+    bfs_player = Player(inventory={"Child"})
+    greedy_player = Player(inventory={"Child"})
 
     bfs_result = bfs(graph, start, goal, player=bfs_player)
     greedy_result = greedy_best_first(
