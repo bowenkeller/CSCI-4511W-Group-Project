@@ -23,19 +23,27 @@ def print_result(name: str, result, inventory: set[str], show_visit_order: bool)
     print()
 
 
-def run_comparison(csv_file: str, start: str, goal: str, show_visit_order: bool = False) -> None:
+def run_comparison(
+    csv_file: str,
+    start: str,
+    goal: str,
+    show_visit_order: bool = False,
+    print_nodes: bool = False,
+    max_expanded: int = 100000,
+) -> None:
     graph = load_graph_from_csv(csv_file)
 
-    print("Nodes in graph:")
-    for title in sorted(graph.node_data):
-        node = graph.node_data[title]
-        edge_summary = [(e.target, e.cost) for e in node.edges]
-        print(
-            f"{node.title}: needs={sorted(node.needs)}, "
-            f"receives={sorted(node.receives)}, "
-            f"edges={edge_summary}"
-        )
-    print()
+    if print_nodes:
+        print("Nodes in graph:")
+        for title in sorted(graph.node_data):
+            node = graph.node_data[title]
+            edge_summary = [(e.target, e.cost) for e in node.edges]
+            print(
+                f"{node.title}: needs={sorted(node.needs)}, "
+                f"receives={sorted(node.receives)}, "
+                f"edges={edge_summary}"
+            )
+        print()
 
     if start not in graph.node_set:
         raise ValueError(f"Start node not found: {start}")
@@ -45,13 +53,22 @@ def run_comparison(csv_file: str, start: str, goal: str, show_visit_order: bool 
     bfs_player = Player(inventory={"Child"})
     greedy_player = Player(inventory={"Child"})
 
-    bfs_result = bfs(graph, start, goal, player=bfs_player)
+    print("Running BFS...")
+    bfs_result = bfs(
+        graph,
+        start,
+        goal,
+        player=bfs_player,
+        max_nodes_expanded=max_expanded,
+    )
+    print("Running Greedy Best-First...")
     greedy_result = greedy_best_first(
         graph,
         start,
         goal,
         baseline_heuristic,
         player=greedy_player,
+        max_nodes_expanded=max_expanded,
     )
 
     print(f"CSV:   {csv_file}")
@@ -78,9 +95,27 @@ def main() -> None:
         action="store_true",
         help="Include full visit order in output",
     )
+    parser.add_argument(
+        "--print-nodes",
+        action="store_true",
+        help="Print full node data before running searches",
+    )
+    parser.add_argument(
+        "--max-expanded",
+        type=int,
+        default=100000,
+        help="Maximum nodes each search may expand before returning partial progress",
+    )
     args = parser.parse_args()
 
-    run_comparison(args.csv, args.start, args.goal, show_visit_order=args.show_visit_order)
+    run_comparison(
+        args.csv,
+        args.start,
+        args.goal,
+        show_visit_order=args.show_visit_order,
+        print_nodes=args.print_nodes,
+        max_expanded=args.max_expanded,
+    )
 
 
 if __name__ == "__main__":

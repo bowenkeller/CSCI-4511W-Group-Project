@@ -70,21 +70,53 @@ def _get_edges_for_state(
     return edges, new_inv
 
 
-def _state_has_unvisited_child(
-    graph: Graph,
+def _register_non_dominated_state(
+    state_frontier: dict[str, list[tuple[frozenset, float]]],
     node: str,
-    path: list[str],
     inventory: frozenset,
-    discovered: set[tuple[str, frozenset]],
-    use_player_rules: bool,
+    cost: float,
 ) -> bool:
-    """Allows revisiting a state if it can still reach a not-yet-discovered child state."""
-    edges, new_inv = _get_edges_for_state(graph, node, path, inventory, use_player_rules)
-    return any((edge.target, new_inv) not in discovered for edge in edges)
+    """
+    Keeps only non-dominated (inventory, cost) states per node.
+
+    A state is dominated if an existing state at the same node has a superset
+    inventory and a cost <= this state's cost.
+    """
+    current = state_frontier.setdefault(node, [])
+
+    for inv_existing, cost_existing in current:
+        if inv_existing.issuperset(inventory) and cost_existing <= cost:
+            return False
+
+    state_frontier[node] = [
+        (inv_existing, cost_existing)
+        for inv_existing, cost_existing in current
+        if not (inventory.issuperset(inv_existing) and cost <= cost_existing)
+    ]
+    state_frontier[node].append((inventory, cost))
+    return True
+
+
+def _is_active_state(
+    state_frontier: dict[str, list[tuple[frozenset, float]]],
+    node: str,
+    inventory: frozenset,
+    cost: float,
+) -> bool:
+    return any(
+        inv_existing == inventory and cost_existing == cost
+        for inv_existing, cost_existing in state_frontier.get(node, [])
+    )
 
 
 
-def bfs(graph: Graph, start: str, goal: str, player: Player | None = None) -> SearchResult:
+def bfs(
+    graph: Graph,
+    start: str,
+    goal: str,
+    player: Player | None = None,
+    max_nodes_expanded: int | None = None,
+) -> SearchResult:
     """
     Standard BFS implementation.
     If a player is provided, collects receives on each visit and filters
@@ -99,7 +131,8 @@ def bfs(graph: Graph, start: str, goal: str, player: Player | None = None) -> Se
     frontier: deque[tuple[str, list[str], float, frozenset]] = deque(
         [(start, [start], 0.0, start_inv)]
     )
-    visited: set[tuple[str, frozenset]] = {(start, start_inv)}
+    state_frontier: dict[str, list[tuple[frozenset, float]]] = {}
+    _register_non_dominated_state(state_frontier, start, start_inv, 0.0)
     visit_order: list[str] = []
     nodes_expanded = 0
     best_path: list[str] = [start]
@@ -108,8 +141,15 @@ def bfs(graph: Graph, start: str, goal: str, player: Player | None = None) -> Se
 
     while frontier:
         node, path, cost, inv = frontier.popleft()
+
+        if not _is_active_state(state_frontier, node, inv, cost):
+            continue
+
         visit_order.append(node)
         nodes_expanded += 1
+
+        if max_nodes_expanded is not None and nodes_expanded >= max_nodes_expanded:
+            break
 
         if len(path) > len(best_path) or (len(path) == len(best_path) and cost < best_cost):
             best_path = path
@@ -131,18 +171,8 @@ def bfs(graph: Graph, start: str, goal: str, player: Player | None = None) -> Se
         )
 
         for edge in edges:
-            state = (edge.target, new_inv)
-            if state not in visited:
-                visited.add(state)
-                frontier.append((edge.target, path + [edge.target], cost + edge.cost, new_inv))
-            elif _state_has_unvisited_child(
-                graph,
-                edge.target,
-                path + [edge.target],
-                new_inv,
-                visited,
-                use_player_rules=player is not None,
-            ):
+            next_cost = cost + edge.cost
+            if _register_non_dominated_state(state_frontier, edge.target, new_inv, next_cost):
                 frontier.append((edge.target, path + [edge.target], cost + edge.cost, new_inv))
 
     if player is not None:
@@ -152,7 +182,14 @@ def bfs(graph: Graph, start: str, goal: str, player: Player | None = None) -> Se
  
 
  
-def greedy_best_first(graph: Graph, start: str, goal: str, heuristic: Heuristic, player: Player | None = None) -> SearchResult:
+def greedy_best_first(
+    graph: Graph,
+    start: str,
+    goal: str,
+    heuristic: Heuristic,
+    player: Player | None = None,
+    max_nodes_expanded: int | None = None,
+) -> SearchResult:
     if start == goal:
         return SearchResult([start], 0.0, 1, [start], found=True)
 
@@ -163,7 +200,8 @@ def greedy_best_first(graph: Graph, start: str, goal: str, heuristic: Heuristic,
     frontier: list[tuple[float, int, str, list[str], float, frozenset]] = [
         (heuristic(start, goal), counter, start, [start], 0.0, start_inv)
     ]
-    visited: set[tuple[str, frozenset]] = set()
+    state_frontier: dict[str, list[tuple[frozenset, float]]] = {}
+    _register_non_dominated_state(state_frontier, start, start_inv, 0.0)
     visit_order: list[str] = []
     nodes_expanded = 0
     best_path: list[str] = [start]
@@ -173,19 +211,14 @@ def greedy_best_first(graph: Graph, start: str, goal: str, heuristic: Heuristic,
     while frontier:
         h, _, node, path, cost, inv = heapq.heappop(frontier)
 
-        state = (node, inv)
-        if state in visited and not _state_has_unvisited_child(
-            graph,
-            node,
-            path,
-            inv,
-            visited,
-            use_player_rules=player is not None,
-        ):
+        if not _is_active_state(state_frontier, node, inv, cost):
             continue
-        visited.add(state)
+
         visit_order.append(node)
         nodes_expanded += 1
+
+        if max_nodes_expanded is not None and nodes_expanded >= max_nodes_expanded:
+            break
 
         if len(path) > len(best_path) or (len(path) == len(best_path) and cost < best_cost):
             best_path = path
@@ -207,25 +240,12 @@ def greedy_best_first(graph: Graph, start: str, goal: str, heuristic: Heuristic,
         )
 
         for edge in edges:
-            target_state = (edge.target, new_inv)
-            if target_state not in visited:
+            next_cost = cost + edge.cost
+            if _register_non_dominated_state(state_frontier, edge.target, new_inv, next_cost):
                 counter += 1
                 heapq.heappush(
                     frontier,
-                    (heuristic(edge.target, goal), counter, edge.target, path + [edge.target], cost + edge.cost, new_inv)
-                )
-            elif _state_has_unvisited_child(
-                graph,
-                edge.target,
-                path + [edge.target],
-                new_inv,
-                visited,
-                use_player_rules=player is not None,
-            ):
-                counter += 1
-                heapq.heappush(
-                    frontier,
-                    (heuristic(edge.target, goal), counter, edge.target, path + [edge.target], cost + edge.cost, new_inv)
+                    (heuristic(edge.target, goal), counter, edge.target, path + [edge.target], next_cost, new_inv)
                 )
 
     if player is not None:
@@ -235,7 +255,14 @@ def greedy_best_first(graph: Graph, start: str, goal: str, heuristic: Heuristic,
 
 
  
-def a_star(graph: Graph, start: str, goal: str, heuristic: Heuristic, player: Player | None = None) -> SearchResult:
+def a_star(
+    graph: Graph,
+    start: str,
+    goal: str,
+    heuristic: Heuristic,
+    player: Player | None = None,
+    max_nodes_expanded: int | None = None,
+) -> SearchResult:
     if start == goal:
         return SearchResult([start], 0.0, 1, [start], found=True)
 
@@ -249,6 +276,8 @@ def a_star(graph: Graph, start: str, goal: str, heuristic: Heuristic, player: Pl
 
     # g_cost keyed on (node, inventory) since same node reached with diff inventory is a different state
     g_cost: dict[tuple[str, frozenset], float] = {(start, start_inv): 0.0}
+    state_frontier: dict[str, list[tuple[frozenset, float]]] = {}
+    _register_non_dominated_state(state_frontier, start, start_inv, 0.0)
     visit_order: list[str] = []
     nodes_expanded = 0
     best_path: list[str] = [start]
@@ -260,9 +289,14 @@ def a_star(graph: Graph, start: str, goal: str, heuristic: Heuristic, player: Pl
 
         if g > g_cost.get((node, inv), float('inf')):
             continue
+        if not _is_active_state(state_frontier, node, inv, g):
+            continue
 
         visit_order.append(node)
         nodes_expanded += 1
+
+        if max_nodes_expanded is not None and nodes_expanded >= max_nodes_expanded:
+            break
 
         if len(path) > len(best_path) or (len(path) == len(best_path) and g < best_cost):
             best_path = path
@@ -287,22 +321,13 @@ def a_star(graph: Graph, start: str, goal: str, heuristic: Heuristic, player: Pl
             new_g = g + edge.cost
             state = (edge.target, new_inv)
 
-            if new_g < g_cost.get(state, float('inf')):
-                g_cost[state] = new_g
-                counter += 1
-                f_new = new_g + heuristic(edge.target, goal)
-                heapq.heappush(
-                    frontier,
-                    (f_new, counter, edge.target, path + [edge.target], new_g, new_inv)
-                )
-            elif _state_has_unvisited_child(
-                graph,
+            if new_g < g_cost.get(state, float('inf')) and _register_non_dominated_state(
+                state_frontier,
                 edge.target,
-                path + [edge.target],
                 new_inv,
-                set(g_cost.keys()),
-                use_player_rules=player is not None,
+                new_g,
             ):
+                g_cost[state] = new_g
                 counter += 1
                 f_new = new_g + heuristic(edge.target, goal)
                 heapq.heappush(
