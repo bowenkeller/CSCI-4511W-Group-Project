@@ -115,7 +115,6 @@ def bfs(
     start: str,
     goal: str,
     player: Player | None = None,
-    max_nodes_expanded: int | None = None,
 ) -> SearchResult:
     """
     Standard BFS implementation.
@@ -147,9 +146,6 @@ def bfs(
 
         visit_order.append(node)
         nodes_expanded += 1
-
-        if max_nodes_expanded is not None and nodes_expanded >= max_nodes_expanded:
-            break
 
         if len(path) > len(best_path) or (len(path) == len(best_path) and cost < best_cost):
             best_path = path
@@ -188,7 +184,6 @@ def greedy_best_first(
     goal: str,
     heuristic: Heuristic,
     player: Player | None = None,
-    max_nodes_expanded: int | None = None,
 ) -> SearchResult:
     if start == goal:
         return SearchResult([start], 0.0, 1, [start], found=True)
@@ -216,9 +211,6 @@ def greedy_best_first(
 
         visit_order.append(node)
         nodes_expanded += 1
-
-        if max_nodes_expanded is not None and nodes_expanded >= max_nodes_expanded:
-            break
 
         if len(path) > len(best_path) or (len(path) == len(best_path) and cost < best_cost):
             best_path = path
@@ -261,7 +253,6 @@ def a_star(
     goal: str,
     heuristic: Heuristic,
     player: Player | None = None,
-    max_nodes_expanded: int | None = None,
 ) -> SearchResult:
     if start == goal:
         return SearchResult([start], 0.0, 1, [start], found=True)
@@ -294,9 +285,6 @@ def a_star(
 
         visit_order.append(node)
         nodes_expanded += 1
-
-        if max_nodes_expanded is not None and nodes_expanded >= max_nodes_expanded:
-            break
 
         if len(path) > len(best_path) or (len(path) == len(best_path) and g < best_cost):
             best_path = path

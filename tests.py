@@ -29,7 +29,6 @@ def run_comparison(
     goal: str,
     show_visit_order: bool = False,
     print_nodes: bool = False,
-    max_expanded: int = 100000,
 ) -> None:
     graph = load_graph_from_csv(csv_file)
 
@@ -59,7 +58,6 @@ def run_comparison(
         start,
         goal,
         player=bfs_player,
-        max_nodes_expanded=max_expanded,
     )
     print("Running Greedy Best-First...")
     greedy_result = greedy_best_first(
@@ -68,7 +66,6 @@ def run_comparison(
         goal,
         baseline_heuristic,
         player=greedy_player,
-        max_nodes_expanded=max_expanded,
     )
 
     print(f"CSV:   {csv_file}")
@@ -100,12 +97,6 @@ def main() -> None:
         action="store_true",
         help="Print full node data before running searches",
     )
-    parser.add_argument(
-        "--max-expanded",
-        type=int,
-        default=100000,
-        help="Maximum nodes each search may expand before returning partial progress",
-    )
     args = parser.parse_args()
 
     run_comparison(
@@ -114,7 +105,6 @@ def main() -> None:
         args.goal,
         show_visit_order=args.show_visit_order,
         print_nodes=args.print_nodes,
-        max_expanded=args.max_expanded,
     )
 
 
