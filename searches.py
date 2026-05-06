@@ -67,6 +67,23 @@ def _get_edges_for_state(
     else:
         edges = graph.get_next(cur_node)
 
+    warp_nodes = [
+        "Warp Fire",
+        "Warp Water",
+        "Warp Forest",
+        "Warp Shadow",
+        "Warp Spirit",
+        "Warp Light",
+    ]
+
+    for warp in warp_nodes:
+        if warp in graph.node_data:
+            warp_node = graph.node_data[warp]
+
+            if warp_node.needs <= set(new_inv):
+                for e in warp_node.edges:
+                    edges.append(e)
+
     return edges, new_inv
 
 
